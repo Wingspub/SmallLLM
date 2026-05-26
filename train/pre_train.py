@@ -1,7 +1,7 @@
 from dataset.dataset import PretrainDataset
 from torch.utils.data import DataLoader
 from torch import optim, nn
-from model.model import SLMConfig, SLMforCasualLM
+from SmallLLM.model.model_SLM import SLMConfig, SLMforCasualLM
 import torch
 
 # Argparse
