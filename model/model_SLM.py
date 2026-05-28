@@ -90,11 +90,11 @@ class AttentionBlock(nn.Module):
     def forward(self, input_ids_embs: torch.Tensor) -> torch.Tensor:
         # Attention
         embs = self.attention(input_ids_embs)
-        input_ids_embs += embs
+        input_ids_embs = input_ids_embs + embs
 
         # FFN
         embs = self.FFN(input_ids_embs)
-        input_ids_embs += embs
+        input_ids_embs = input_ids_embs + embs
 
         return input_ids_embs
 
@@ -127,7 +127,14 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
 
-    def forward(self, input_ids: torch.Tensor, past_key_values: Cache | None = None, use_cache: bool = False, return_dict: bool = False) -> CausalLMOutputWithPast:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        past_key_values: Cache | None = None,
+        use_cache: bool = False,
+        return_dict: bool = False
+    ) -> CausalLMOutputWithPast:
         hidden_states = self.model(input_ids)
         logits = self.lm_head(hidden_states)
 
