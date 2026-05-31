@@ -1284,8 +1284,8 @@ wheels = [
 ]
 
 [[package]]
-name = "smallllm"
-version = "0.0.1"
+name = "smalllm"
+version = "0.0.2"
 source = { virtual = "." }
 dependencies = [
     { name = "datasets" },

@@ -1,6 +1,6 @@
 [project]
-name = "smallllm"
-version = "0.0.1"
+name = "smalllm"
+version = "0.0.2"
 description = "samll scale parameter to learn the modern Language model"
 readme = "README.md"
 requires-python = ">=3.13"
