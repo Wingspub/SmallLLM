@@ -209,6 +209,22 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
         return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=past_key_values, hidden_states=hidden_states)
 
 
+    def naive_generate(self, input_ids: torch.Tensor, max_length: int) -> torch.Tensor:
+        length = input_ids.shape[-1]
+        max_length = max(length, max_length)
+
+
+        response = torch.zeros((1, max_length), dtype=torch.int32).to(input_ids.device)
+        response[:, :length] = input_ids[:1, :length]
+
+        for i in range(length, max_length):
+            output_pred = self.lm_head(self.model(response[:, :i]))
+            response[:, i] = torch.argmax(output_pred[:, -1], dim=-1)
+            del output_pred
+
+        return response
+
+
 if __name__ == "__main__":
     '''Module Test'''
     vocab_size = 256
@@ -224,4 +240,6 @@ if __name__ == "__main__":
     print(output)
 
     gen_res = model.generate(input_ids, max_length=256)
+    gen_na_res = model.naive_generate(input_ids, max_length=256)
     print(gen_res)
+    print(gen_na_res)

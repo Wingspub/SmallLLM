@@ -8,11 +8,10 @@ from model.model_SLM import SLMConfig, SLMforCasualLM
 import torch
 
 # Argparse
-lr = 1e-4
+lr = 1e-3
 train_iter_num = 10000
-batch_size = 8
+batch_size = 16
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-# device = torch.device("cpu")
 
 # Dataset
 data_files = ["./data/pretrain_data.jsonl"]
@@ -46,4 +45,6 @@ for _ in range(train_iter_num):
         if step % 1000 == 0:
             pretext = tokenizer("随着", return_tensors="pt")["input_ids"].to(device)
             output_ids = model.generate(pretext, max_length=128).cpu()
+            output_na_ids =  model.naive_generate(pretext, max_length=128).cpu()
             print(tokenizer.decode(output_ids))
+            print(tokenizer.decode(output_na_ids))
