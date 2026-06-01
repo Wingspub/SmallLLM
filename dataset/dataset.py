@@ -19,7 +19,10 @@ class PretrainDataset(Dataset):
 
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         encodings = self.tokenizer(text=self.dataset['text'][index], truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
-        return encodings["input_ids"][0], encodings["attention_mask"][0]
+        input_ids: torch.Tensor = encodings["input_ids"][0]
+        labels = input_ids.clone()
+        labels[labels == self.tokenizer.pad_token_id] = -100
+        return input_ids, labels
 
 
 class SFTDataset(Dataset):

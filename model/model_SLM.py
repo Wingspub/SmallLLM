@@ -1,9 +1,9 @@
-from typing import Any, cast, Tuple
-
+from typing import cast, Tuple, Unpack
 from torch import nn
 import torch.nn.functional as F
-from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, Cache
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, Cache, Qwen3Model
+from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
+from transformers.utils.generic import TransformersKwargs
 import torch
 
 
@@ -90,6 +90,14 @@ class FFN(nn.Module):
         return output
 
 
+def eager_attention_forward(
+        
+
+):
+    ...
+
+
+
 class Attention(nn.Module):
     def __init__(self, config: SLMConfig) -> None:
         super().__init__()
@@ -133,9 +141,10 @@ class Attention(nn.Module):
 
 
 class AttentionBlock(nn.Module):
-    def __init__(self, config: SLMConfig) -> None:
+    def __init__(self, config: SLMConfig, layer_id: int) -> None:
         super().__init__()
         self.attention = Attention(config)
+        self.layer_id = layer_id
         self.LN1 = RMSNorm(config.hidden_size)
         self.FFN = FFN(config)
         self.LN2 = RMSNorm(config.hidden_size)
@@ -161,25 +170,32 @@ class SLMModel(PreTrainedModel):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         head_dims = config.hidden_size // config.num_head
-        freqs_cos, freqs_sin = precompute_rope_freqs(dim=head_dims)
+        freqs_cos, freqs_sin = precompute_rope_freqs(dim=head_dims)  # TODO: in the future, it will change to dynamic calculate.
         self.freqs_cos = nn.Buffer(freqs_cos, persistent=False)
         self.freqs_sin = nn.Buffer(freqs_sin, persistent=False)
+        self.output_norm = RMSNorm(config.hidden_size)
 
         self.layers = nn.ModuleList()
-        for _ in range(config.num_hidden_layers):
-            layer = AttentionBlock(config=config)
+        for i in range(config.num_hidden_layers):
+            layer = AttentionBlock(config=config, layer_id=i)
             self.layers.append(layer)
 
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor) -> BaseModelOutputWithPast:
         L = input_ids.shape[1]
         embs = self.embed_tokens(input_ids)
         position_embeddings = (self.freqs_cos[:L], self.freqs_sin[:L])
 
+        # TODO attention mask
+
         for layer in self.layers:
             embs = layer(embs, position_embeddings)
 
-        return embs
+        hidden_states = self.output_norm(embs)
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=None
+        )
 
 
 class SLMforCasualLM(PreTrainedModel, GenerationMixin):
@@ -194,21 +210,35 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
     def forward(
         self,
         input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
         past_key_values: Cache | None = None,
+        labels: torch.LongTensor | None = None,
         use_cache: bool = False,
-        return_dict: bool = False
+        return_dict: bool = False,
+        logits_to_keep: int | torch.Tensor = 0,
+        **kwargs: Unpack[TransformersKwargs],
     ) -> CausalLMOutputWithPast:
-        hidden_states = self.model(input_ids)
-        logits = self.lm_head(hidden_states)
+        output: BaseModelOutputWithPast = self.model(input_ids)
 
-        # CrossEntropy
-        y_pred, y = logits[:, :-1], input_ids[:, 1:]
-        loss = F.cross_entropy(y_pred.reshape(-1, y_pred.size(-1)), y.reshape(-1))
+        hidden_states = output.last_hidden_state
+        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        if hidden_states is None: raise ValueError("The model should output hidden_states.")
+        logits = self.lm_head(hidden_states[:, slice_indices, :])
 
-        return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=past_key_values, hidden_states=hidden_states)
+        loss = None
+        if labels is not None:
+            # CrossEntropy
+            y_pred, y = logits[:, :-1].contiguous(), labels[:, 1:]
+            loss = F.cross_entropy(y_pred.reshape(-1, y_pred.size(-1)), y.reshape(-1), ignore_index=-100)
 
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=past_key_values,
+            hidden_states=(hidden_states, )
+        )
 
+    @torch.inference_mode()
     def naive_generate(self, input_ids: torch.Tensor, max_length: int) -> torch.Tensor:
         length = input_ids.shape[-1]
         max_length = max(length, max_length)
@@ -218,7 +248,7 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
         response[:, :length] = input_ids[:1, :length]
 
         for i in range(length, max_length):
-            output_pred = self.lm_head(self.model(response[:, :i]))
+            output_pred = self.lm_head(self.model(response[:, :i]).last_hidden_state)
             response[:, i] = torch.argmax(output_pred[:, -1], dim=-1)
             del output_pred
 
@@ -239,7 +269,7 @@ if __name__ == "__main__":
     output = model(input_ids, attention_mask)
     print(output)
 
-    gen_res = model.generate(input_ids, max_length=256)
+    gen_res = model.generate(input_ids, max_length=256, use_cache=False)
     gen_na_res = model.naive_generate(input_ids, max_length=256)
     print(gen_res)
     print(gen_na_res)
