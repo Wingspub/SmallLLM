@@ -1,7 +1,7 @@
 from typing import cast, Tuple, Unpack
 from torch import nn
 import torch.nn.functional as F
-from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, Cache, Qwen3Model
+from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, Cache, DynamicCache
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.utils.generic import TransformersKwargs
 import torch
@@ -129,7 +129,7 @@ def eager_attention_forward(
 
 
 class Attention(nn.Module):
-    def __init__(self, config: SLMConfig) -> None:
+    def __init__(self, config: SLMConfig, layer_id: int) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
@@ -143,7 +143,7 @@ class Attention(nn.Module):
             self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.is_casual = config.is_casual
         self.p = config.p
-
+        self.layer_id = layer_id
 
         self.WQ = nn.Linear(self.hidden_size, self.head_dim * self.num_attention_heads, bias=False)
         self.WV = nn.Linear(self.hidden_size, self.head_dim * self.num_key_value_heads, bias=False)
@@ -152,11 +152,16 @@ class Attention(nn.Module):
         self.k_norm = RMSNorm(self.head_dim)
 
         self.score_dropout = nn.Dropout(p=self.p)
-
         self.output_project = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
 
-    def forward(self, input_embs: torch.Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor], attention_mask: torch.Tensor) -> torch.Tensor:
+    def forward(self,
+        input_embs: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        attention_mask: torch.Tensor,
+        past_key_values: Cache | None = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> torch.Tensor:
         B, L, d = input_embs.shape
         queries = cast(torch.Tensor, self.WQ(input_embs)).reshape(B, L, self.num_attention_heads, self.head_dim).transpose(1, 2)
         keys = cast(torch.Tensor, self.WK(input_embs)).reshape(B, L, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -166,6 +171,10 @@ class Attention(nn.Module):
         cos, sin = position_embeddings
         queries, keys = apply_rotary_pos_emb(queries, keys, cos, sin, unsqueeze_dim=0)
 
+        if past_key_values is not None:
+            keys, values = past_key_values.update(keys, values, self.layer_id)
+
+        # print(queries.shape, keys.shape, values.shape)
         attn_output, attn_weight = eager_attention_forward(
             module=self,
             queries=queries,
@@ -174,6 +183,7 @@ class Attention(nn.Module):
             attention_mask=attention_mask,
             scaling=self.scaling,
             droput=self.p,
+            **kwargs
         )
         output = attn_output.reshape(B, L, d).contiguous()
         output = self.output_project(output)
@@ -183,17 +193,28 @@ class Attention(nn.Module):
 class AttentionBlock(nn.Module):
     def __init__(self, config: SLMConfig, layer_id: int) -> None:
         super().__init__()
-        self.attention = Attention(config)
-        self.layer_id = layer_id
+        self.attention = Attention(config, layer_id)
         self.LN1 = RMSNorm(config.hidden_size)
         self.FFN = FFN(config)
         self.LN2 = RMSNorm(config.hidden_size)
 
 
-    def forward(self, input_ids_embs: torch.Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor], attention_mask: torch.Tensor) -> torch.Tensor:
+    def forward(self,
+        input_ids_embs: torch.Tensor,
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        attention_mask: torch.Tensor,
+        past_key_values: Cache | None = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> torch.Tensor:
         # Attention
         normed = self.LN1(input_ids_embs)
-        embs = self.attention(normed, position_embeddings=position_embeddings, attention_mask=attention_mask)
+        embs = self.attention(
+            normed,
+            position_embeddings=position_embeddings,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            **kwargs,
+        )
         x = input_ids_embs + embs
 
         # FFN
@@ -220,26 +241,40 @@ class SLMModel(PreTrainedModel):
             layer = AttentionBlock(config=config, layer_id=i)
             self.layers.append(layer)
 
+        self.post_init()
 
-    def forward(self, input_ids: torch.Tensor) -> BaseModelOutputWithPast:
+
+    def forward(self,
+        input_ids: torch.Tensor,
+        past_key_values: Cache | None = None,
+        use_cache: bool | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> BaseModelOutputWithPast:
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+
+        past_seen_tokens = past_key_values.get_seq_length()if past_key_values is not None else 0
         L = input_ids.shape[1]
-        hidden_states = self.embed_tokens(input_ids)
-        position_embeddings = (self.freqs_cos[:L], self.freqs_sin[:L])
 
-        # TODO attention mask
-        attention_mask = torch.log(torch.tril(torch.ones(L, L))).to(hidden_states.device)
+        hidden_states = self.embed_tokens(input_ids)
+        position_embeddings = (self.freqs_cos[past_seen_tokens:L+past_seen_tokens], self.freqs_sin[past_seen_tokens:L+past_seen_tokens])
+
+        attention_mask = torch.log(torch.tril(torch.ones(L, L+past_seen_tokens), diagonal=past_seen_tokens)).to(hidden_states.device)
 
         for layer in self.layers:
             hidden_states = layer(
                 hidden_states,
                 position_embeddings=position_embeddings,
-                attention_mask=attention_mask
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                **kwargs,
                 )
 
         hidden_states = self.output_norm(hidden_states)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=None
+            past_key_values=past_key_values if use_cache else None,
         )
 
 
@@ -263,7 +298,12 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
         logits_to_keep: int | torch.Tensor = 0,
         **kwargs: Unpack[TransformersKwargs],
     ) -> CausalLMOutputWithPast:
-        output: BaseModelOutputWithPast = self.model(input_ids)
+        output: BaseModelOutputWithPast = self.model(
+            input_ids=input_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            **kwargs
+            )
 
         hidden_states = output.last_hidden_state
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
@@ -279,7 +319,7 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
-            past_key_values=past_key_values,
+            past_key_values=output.past_key_values,
             hidden_states=(hidden_states, )
         )
 
@@ -314,12 +354,14 @@ if __name__ == "__main__":
     model = SLMforCasualLM(config=config)
 
     # input
-    input_ids = torch.randint(0, vocab_size, (1, 128))
-    attention_mask = torch.randint(0, vocab_size, (1, 128))
+    input_ids = torch.randint(0, vocab_size, (1, 4))
+    attention_mask = torch.randint(0, vocab_size, (1, 4))
     output = model(input_ids, attention_mask)
     print(output)
 
-    gen_res = model.generate(input_ids, max_length=256, use_cache=False)
-    gen_na_res = model.naive_generate(input_ids, max_length=256)
+    gen_res = model.generate(input_ids, max_length=8, use_cache=True)
     print(gen_res)
+    gen_resv2 = model.generate(input_ids, max_length=8, use_cache=False)
+    print(gen_resv2)
+    gen_na_res = model.naive_generate(input_ids, max_length=8)
     print(gen_na_res)

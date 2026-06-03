@@ -45,8 +45,9 @@ for _ in range(train_iter_num):
         step += 1
         if step % 1000 == 0:
             pretext = tokenizer("随着", return_tensors="pt")["input_ids"].to(device)
-            output_ids = model.generate(pretext, max_length=128, use_cache=False, do_sample=True, num_return_sequences=4, temperature=0.8, top_p=0.9).cpu()
+            output_ids = model.generate(pretext, max_length=128, do_sample=True, num_return_sequences=4, temperature=0.8, top_p=0.9).cpu()
             for i, ids in enumerate(output_ids):
                 print(i, tokenizer.decode(ids))
-            output_na_ids =  model.naive_generate(pretext, max_length=128).cpu()
-            print(tokenizer.decode(output_na_ids))
+            # greedy sample
+            output_cache_ids = model.generate(pretext, max_length=128).cpu()
+            print("greedy sample:", tokenizer.decode(output_cache_ids)[0])
