@@ -21,7 +21,7 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 
 # Model
 vocab_size = tokenizer.vocab_size + 22
-config = SLMConfig(vocab_size=vocab_size, hidden_size=512, num_hidden_layers=8, num_head=4)
+config = SLMConfig(vocab_size=vocab_size, hidden_size=512, num_hidden_layers=8, num_attention_heads=4, num_key_value_heads=1)
 model = SLMforCasualLM(config).to(device)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
