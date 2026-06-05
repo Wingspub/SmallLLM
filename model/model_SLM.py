@@ -110,7 +110,7 @@ def eager_attention_forward(
     values: torch.Tensor,
     attention_mask: torch.Tensor | None,
     scaling: float,
-    droput: float = 0.0,
+    droput_p: float = 0.0,
     **kwargs: Unpack[TransformersKwargs]
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     key_states = repeat_kv(keys, module.num_key_value_groups)
@@ -121,7 +121,7 @@ def eager_attention_forward(
         attention_weight = attention_weight + attention_mask
 
     attention_weight = F.softmax(attention_weight, dim=-1).to(queries.dtype)
-    attention_weight = F.dropout(attention_weight, droput, training=module.training)
+    attention_weight = F.dropout(attention_weight, droput_p, training=module.training)
     attention_output = torch.matmul(attention_weight, value_states)
     attention_output = attention_output.transpose(1, 2).contiguous()
 
@@ -175,6 +175,19 @@ class Attention(nn.Module):
             keys, values = past_key_values.update(keys, values, self.layer_id)
 
         # print(queries.shape, keys.shape, values.shape)
+        # key_states = repeat_kv(keys, self.num_key_value_groups)
+        # value_states = repeat_kv(values, self.num_key_value_groups)
+        # p = self.p if self.training else 0.0
+        # attn_output = F.scaled_dot_product_attention(
+        #     query=queries,
+        #     key=key_states,
+        #     value=value_states,
+        #     attn_mask=attention_mask,
+        #     dropout_p=p,
+        #     # is_causal=self.is_casual,
+        #     scale=self.scaling
+        # )
+        
         attn_output, attn_weight = eager_attention_forward(
             module=self,
             queries=queries,
@@ -182,9 +195,10 @@ class Attention(nn.Module):
             values=values,
             attention_mask=attention_mask,
             scaling=self.scaling,
-            droput=self.p,
+            droput_p=self.p,
             **kwargs
         )
+
         output = attn_output.reshape(B, L, d).contiguous()
         output = self.output_project(output)
         return output

@@ -23,11 +23,12 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 # Model
 vocab_size = tokenizer.vocab_size + 22
 config = SLMConfig(vocab_size=vocab_size, hidden_size=512, num_hidden_layers=8, num_attention_heads=4, num_key_value_heads=1)
-model = SLMforCasualLM(config).to(device)
+model = SLMforCasualLM(config).to(device).to(torch.bfloat16)
 model = torch.compile(model)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
 # Train
+model.train()
 step = 0
 s1 = time.perf_counter()
 for _ in range(train_iter_num):
@@ -49,6 +50,7 @@ for _ in range(train_iter_num):
 
         step += 1
         if step % 1000 == 0:
+            model.eval()
             pretext = tokenizer("随着", return_tensors="pt")["input_ids"].to(device)
             prefill_len = len(pretext)
             gs1 = time.perf_counter()
@@ -60,3 +62,4 @@ for _ in range(train_iter_num):
             # greedy sample
             output_cache_ids = model.generate(pretext, max_length=128).cpu()
             print("greedy sample:", tokenizer.decode(output_cache_ids)[0])
+            s1 = time.perf_counter()
