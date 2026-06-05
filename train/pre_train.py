@@ -12,12 +12,13 @@ import time
 lr = 1e-3
 train_iter_num = 10000
 batch_size = 16
+seq_len = 128
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # Dataset
 data_files = ["./data/pretrain_data.jsonl"]
 tokenizer:TokenizersBackend = TokenizersBackend.from_pretrained("Qwen/Qwen2.5-7B")
-train_dataset = PretrainDataset(data_files, tokenizer, 128)
+train_dataset = PretrainDataset(data_files, tokenizer, seq_len)
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
 # Model
@@ -54,12 +55,12 @@ for _ in range(train_iter_num):
             pretext = tokenizer("随着", return_tensors="pt")["input_ids"].to(device)
             prefill_len = len(pretext)
             gs1 = time.perf_counter()
-            output_ids = model.generate(pretext, max_length=128, do_sample=True, num_return_sequences=4, temperature=0.8, top_p=0.9).cpu()
+            output_ids = model.generate(pretext, max_length=seq_len, do_sample=True, num_return_sequences=4, temperature=0.8, top_p=0.9).cpu()
             gs2 = time.perf_counter()
-            print(f"decode time: {(128-prefill_len)/(gs2-gs1):.2f} tokens/s")
+            print(f"decode time: {(seq_len-prefill_len)/(gs2-gs1):.2f} tokens/s")
             for i, ids in enumerate(output_ids):
                 print(i, tokenizer.decode(ids))
             # greedy sample
-            output_cache_ids = model.generate(pretext, max_length=128).cpu()
+            output_cache_ids = model.generate(pretext, max_length=seq_len).cpu()
             print("greedy sample:", tokenizer.decode(output_cache_ids)[0])
             s1 = time.perf_counter()
