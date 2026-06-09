@@ -24,6 +24,7 @@ if not os.path.exists(save_dir):
 # Dataset
 data_files = ["./data/pretrain_data.jsonl"]
 tokenizer:TokenizersBackend = TokenizersBackend.from_pretrained("Qwen/Qwen2.5-7B")
+tokenizer.save_pretrained(save_dir)
 train_dataset = PretrainDataset(data_files, tokenizer, seq_len)
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
@@ -75,4 +76,10 @@ for _ in range(train_iter_num):
 
         # save the model
         if step % save_iter_num == 0:
-            torch.save(model, save_dir+"/pretrain.pt")
+            print("save model")
+            model.save_pretrained(
+                save_directory=save_dir,
+                safe_serialization=True,
+                max_shard_size="5GB"
+                )
+

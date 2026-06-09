@@ -1,7 +1,7 @@
 from typing import cast, Tuple, Unpack
 from torch import nn
 import torch.nn.functional as F
-from transformers import PreTrainedModel, GenerationMixin, Cache, DynamicCache, Qwen3_5Config
+from transformers import PreTrainedModel, GenerationMixin, Cache, DynamicCache
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.utils.generic import TransformersKwargs
 import torch
@@ -207,7 +207,6 @@ class AttentionBlock(nn.Module):
 
 
 class SLMModel(PreTrainedModel):
-    config_class = SLMConfig
     def __init__(self, config: SLMConfig):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
@@ -260,13 +259,14 @@ class SLMModel(PreTrainedModel):
 
 
 class SLMforCasualLM(PreTrainedModel, GenerationMixin):
+    config_class = SLMConfig
     _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
 
     def __init__(self, config: SLMConfig):
         super().__init__(config)
         self.model = SLMModel(config=config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
+        self.post_init()
 
     def forward(
         self,

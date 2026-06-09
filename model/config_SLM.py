@@ -19,9 +19,10 @@ class SLMConfig(PretrainedConfig):
         num_attention_heads: int = 4,
         num_key_value_heads: int | None = None,
         p: float = 0.0,
-        is_casual: bool = True
+        is_casual: bool = True,
+        **kwargs
     ) -> None:
-        super().__init__()
+        super().__init__(**kwargs)
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
