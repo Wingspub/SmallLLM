@@ -1,44 +1,11 @@
 from typing import cast, Tuple, Unpack
 from torch import nn
 import torch.nn.functional as F
-from transformers import PretrainedConfig, PreTrainedModel, GenerationMixin, Cache, DynamicCache
+from transformers import PreTrainedModel, GenerationMixin, Cache, DynamicCache, Qwen3_5Config
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.utils.generic import TransformersKwargs
 import torch
-
-
-class SLMConfig(PretrainedConfig):
-    model_type = "SLM"
-    vocab_size: int
-    hidden_size: int
-    num_hidden_layers: int
-    num_attention_heads: int
-    num_key_value_heads: int | None
-    p: float
-    is_casual: bool
-
-    def __init__(
-        self,
-        vocab_size: int = 3600,
-        hidden_size: int = 1024,
-        num_hidden_layers: int = 6,
-        num_attention_heads: int = 4,
-        num_key_value_heads: int | None = None,
-        p: float = 0.0,
-        is_casual: bool = True
-    ) -> None:
-        super().__init__()
-        self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
-        self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
-        self.num_key_value_heads = num_key_value_heads
-        self.p = p
-
-        head_hidden_size = hidden_size // num_attention_heads
-        assert head_hidden_size * num_attention_heads == hidden_size
-
-        self.is_casual = is_casual
+from .config_SLM import SLMConfig
 
 
 def precompute_rope_freqs(dim: int, max_seq_length: int = 32*1024, rope_base: float = 1e6) -> Tuple[torch.Tensor, torch.Tensor]:

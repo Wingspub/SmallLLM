@@ -219,3 +219,6 @@ __marimo__/
 
 # dataset
 *.jsonl
+
+# checkpoint
+checkpoint

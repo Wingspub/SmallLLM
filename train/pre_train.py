@@ -1,19 +1,25 @@
 from typing import cast
+from .utils import model_init
 from dataset.dataset import PretrainDataset
 from torch.utils.data import DataLoader
-from torch import optim, nn
+from torch import optim
 from transformers import TokenizersBackend
 from transformers.modeling_outputs import CausalLMOutputWithPast
-from model.model_SLM import SLMConfig, SLMforCasualLM
 import torch
 import time
+import os
 
 # Argparse
 lr = 1e-3
 train_iter_num = 10000
+save_iter_num = 10000
+save_dir = "./checkpoint"
 batch_size = 16
 seq_len = 128
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
 
 # Dataset
 data_files = ["./data/pretrain_data.jsonl"]
@@ -22,9 +28,8 @@ train_dataset = PretrainDataset(data_files, tokenizer, seq_len)
 train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
 
 # Model
-vocab_size = tokenizer.vocab_size + 22
-config = SLMConfig(vocab_size=vocab_size, hidden_size=512, num_hidden_layers=8, num_attention_heads=4, num_key_value_heads=1)
-model = SLMforCasualLM(config).to(device).to(torch.bfloat16)
+model = model_init()
+model = model.to(device).to(torch.bfloat16)
 model = torch.compile(model)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -34,6 +39,7 @@ step = 0
 s1 = time.perf_counter()
 for _ in range(train_iter_num):
     for input_ids, labels in train_dataloader:
+        step += 1
         input_ids = input_ids.to(device)
         labels = labels.to(device)
 
@@ -44,12 +50,13 @@ for _ in range(train_iter_num):
         optimizer.step()
         optimizer.zero_grad()
 
+        # print the loss
         if step % 50 == 0:
             s2 = time.perf_counter()
             print(f"{step} loss:{loss.cpu().item():.6f}, cost time:{s2-s1:.2f}s")
             s1 = time.perf_counter()
 
-        step += 1
+        # print the generate
         if step % 1000 == 0:
             model.eval()
             pretext = tokenizer("随着", return_tensors="pt")["input_ids"].to(device)
@@ -64,3 +71,8 @@ for _ in range(train_iter_num):
             output_cache_ids = model.generate(pretext, max_length=seq_len).cpu()
             print("greedy sample:", tokenizer.decode(output_cache_ids)[0])
             s1 = time.perf_counter()
+        
+
+        # save the model
+        if step % save_iter_num == 0:
+            torch.save(model, save_dir+"/pretrain.pt")
