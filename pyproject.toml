@@ -13,3 +13,8 @@ dependencies = [
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true
+
+[dependency-groups]
+dev = [
+    "thop>=0.1.1.post2209072238",
+]
