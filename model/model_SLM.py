@@ -142,29 +142,29 @@ class Attention(nn.Module):
             keys, values = past_key_values.update(keys, values, self.layer_id)
 
         # print(queries.shape, keys.shape, values.shape)
-        # key_states = repeat_kv(keys, self.num_key_value_groups)
-        # value_states = repeat_kv(values, self.num_key_value_groups)
-        # p = self.p if self.training else 0.0
-        # attn_output = F.scaled_dot_product_attention(
-        #     query=queries,
-        #     key=key_states,
-        #     value=value_states,
-        #     attn_mask=attention_mask,
-        #     dropout_p=p,
-        #     is_causal=False,
-        #     scale=self.scaling
-        # )
-
-        attn_output, attn_weight = eager_attention_forward(
-            module=self,
-            queries=queries,
-            keys=keys,
-            values=values,
-            attention_mask=attention_mask,
-            scaling=self.scaling,
-            droput_p=self.p,
-            **kwargs
+        key_states = repeat_kv(keys, self.num_key_value_groups)
+        value_states = repeat_kv(values, self.num_key_value_groups)
+        p = self.p if self.training else 0.0
+        attn_output = F.scaled_dot_product_attention(
+            query=queries,
+            key=key_states,
+            value=value_states,
+            attn_mask=attention_mask,
+            dropout_p=p,
+            is_causal=False,
+            scale=self.scaling
         )
+
+        # attn_output, attn_weight = eager_attention_forward(
+        #     module=self,
+        #     queries=queries,
+        #     keys=keys,
+        #     values=values,
+        #     attention_mask=attention_mask,
+        #     scaling=self.scaling,
+        #     droput_p=self.p,
+        #     **kwargs
+        # )
 
         output = attn_output.transpose(1, 2).contiguous().view(B, L, d)
         output = self.output_project(output)
@@ -240,7 +240,7 @@ class SLMModel(PreTrainedModel):
         hidden_states = self.embed_tokens(input_ids)
         position_embeddings = (self.freqs_cos[past_seen_tokens:L+past_seen_tokens], self.freqs_sin[past_seen_tokens:L+past_seen_tokens])
 
-        attention_mask = torch.log(torch.tril(torch.ones(L, L+past_seen_tokens), diagonal=past_seen_tokens)).to(hidden_states.device)
+        attention_mask = torch.log(torch.tril(torch.ones(L, L+past_seen_tokens), diagonal=past_seen_tokens)).to(device=hidden_states.device, dtype=hidden_states.dtype)
 
         for layer in self.layers:
             hidden_states = layer(

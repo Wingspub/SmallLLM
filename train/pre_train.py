@@ -14,8 +14,8 @@ lr = 1e-3
 train_iter_num = 10000
 save_iter_num = 10000
 save_dir = "./checkpoint"
-batch_size = 4
-seq_len = 1024
+batch_size = 8
+seq_len = 512
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 if not os.path.exists(save_dir):
@@ -30,16 +30,16 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 
 # Model
 model = model_init()
-model = model.to(device)
-model = torch.compile(model)
+model = model.to(device=device, dtype=torch.bfloat16)
+model = torch.compile(model, dynamic=True)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
 # Train
-model.train()
 step = 0
 s1 = time.perf_counter()
 for _ in range(train_iter_num):
     for input_ids, labels in train_dataloader:
+        model.train()
         step += 1
         input_ids = input_ids.to(device)
         labels = labels.to(device)
@@ -48,6 +48,7 @@ for _ in range(train_iter_num):
         loss = cast(torch.FloatTensor, output.loss)
 
         loss.backward()
+        del output
         optimizer.step()
         optimizer.zero_grad()
 
@@ -81,4 +82,3 @@ for _ in range(train_iter_num):
                 safe_serialization=True,
                 max_shard_size="5GB"
                 )
-
