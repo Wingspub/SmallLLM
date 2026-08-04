@@ -2,9 +2,12 @@ import torch
 from torch.utils.benchmark import Timer
 from typing import List
 
-# ============== 方法 ==================
-from MHA_warpper import MHAwithWarpper
-
+# ============== 因果注意力方法 ==================
+from MHA_navie import navieMHA
+from MHA_pytorch import MHA_pytorch
+from MHA_pytorch_fa import MHA_pytorch_fa
+from MHA_SPDA import MHA_SPDA
+from MHA_SPDA_fa import MHA_SPDA_fa
 # ======================================
 
 device = torch.device("cuda")
@@ -17,7 +20,11 @@ embed_dims = 768
 # 测量序列增长带来的性能差异
 
 model_list: List = [
-    MHAwithWarpper,
+    navieMHA,
+    MHA_pytorch,
+    MHA_pytorch_fa,
+    MHA_SPDA,
+    MHA_SPDA_fa
 ]
 
 embeddings = torch.rand((batch_size, seq_len, embed_dims)).to(device=device)
