@@ -234,7 +234,7 @@ class SLMModel(PreTrainedModel):
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
 
-        past_seen_tokens = past_key_values.get_seq_length()if past_key_values is not None else 0
+        past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
         L = input_ids.shape[1]
 
         hidden_states = self.embed_tokens(input_ids)
@@ -322,9 +322,9 @@ class SLMforCasualLM(PreTrainedModel, GenerationMixin):
 
 
 if __name__ == "__main__":
-    '''Module Test'''
+    """模块测试"""
     vocab_size = 256
-    hidden_size = 64
+    hidden_size = 512
     num_hidden_layers = 6
     config = SLMConfig(
         vocab_size=vocab_size,
