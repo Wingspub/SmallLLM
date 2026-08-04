@@ -41,7 +41,7 @@ tokenizer_vocab_size = 151665
 CONFIG = {
     "test": SLMConfig(
         vocab_size=tokenizer_vocab_size+22,
-        hidden_size=256,
+        hidden_size=512,
         num_hidden_layers=4,
         num_attention_heads=4,
         num_key_value_heads=1

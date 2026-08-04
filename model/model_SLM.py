@@ -90,7 +90,7 @@ def eager_attention_forward(
     attention_weight = F.softmax(attention_weight, dim=-1).to(queries.dtype)
     attention_weight = F.dropout(attention_weight, droput_p, training=module.training)
     attention_output = torch.matmul(attention_weight, value_states)
-    attention_output = attention_output.transpose(1, 2).contiguous()
+    attention_output = attention_output
 
     return attention_output, attention_weight
 
@@ -151,10 +151,10 @@ class Attention(nn.Module):
         #     value=value_states,
         #     attn_mask=attention_mask,
         #     dropout_p=p,
-        #     # is_causal=self.is_casual,
+        #     is_causal=False,
         #     scale=self.scaling
         # )
-        
+
         attn_output, attn_weight = eager_attention_forward(
             module=self,
             queries=queries,
@@ -166,7 +166,7 @@ class Attention(nn.Module):
             **kwargs
         )
 
-        output = attn_output.reshape(B, L, d).contiguous()
+        output = attn_output.transpose(1, 2).contiguous().view(B, L, d)
         output = self.output_project(output)
         return output
 

@@ -14,8 +14,8 @@ lr = 1e-3
 train_iter_num = 10000
 save_iter_num = 10000
 save_dir = "./checkpoint"
-batch_size = 16
-seq_len = 128
+batch_size = 4
+seq_len = 1024
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 if not os.path.exists(save_dir):
@@ -30,7 +30,7 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 
 # Model
 model = model_init()
-model = model.to(device).to(torch.bfloat16)
+model = model.to(device)
 model = torch.compile(model)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -72,7 +72,6 @@ for _ in range(train_iter_num):
             output_cache_ids = model.generate(pretext, max_length=seq_len).cpu()
             print("greedy sample:", tokenizer.decode(output_cache_ids)[0])
             s1 = time.perf_counter()
-        
 
         # save the model
         if step % save_iter_num == 0:
